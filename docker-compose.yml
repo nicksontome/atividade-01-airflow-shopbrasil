@@ -1,0 +1,144 @@
+# =============================================================================
+# Atividade 01 – Airflow | ShopBrasil: preços por categoria
+# Apache Airflow 2.9 (LocalExecutor) + PostgreSQL (metadata) + PostgreSQL (DW)
+#
+# Subir tudo:   docker compose up -d
+# UI:           http://localhost:8080   (admin / admin)
+# Banco do DW:  localhost:5434          (shop / shop123, db shopbrasil_dw)
+# Derrubar:     docker compose down      (mantém dados)
+#               docker compose down -v   (apaga bancos e recomeça do zero)
+#
+# Linux: antes da 1ª vez ->  mkdir -p logs && chmod -R 777 logs
+#
+# Serviços:
+#   postgres-meta      banco interno do Airflow (estado das execuções)
+#   postgres-dw        banco analítico onde o pipeline grava as métricas
+#   airflow-init       roda UMA vez: migra o banco, cria usuário admin,
+#                      a Connection "postgres_shopbrasil" e o pool "ecommerce_pool"
+#   airflow-scheduler  agenda e executa as tasks (LocalExecutor)
+#   airflow-webserver  interface web
+# =============================================================================
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.3-python3.11
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-meta/airflow
+    AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nfd7cA="
+    # Pipeline já nasce ligado (agenda sozinho às 06:00 de Brasília)
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__SECRET_KEY: "shopbrasil-dev-secret"
+    AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: "America/Sao_Paulo"
+    # Parâmetros do pipeline (úteis para demonstrar falhas sem esperar minutos):
+    #   RETRY_DELAY_SECONDS=5 FAKESTORE_BASE_URL=https://fakestoreapi.com/invalido docker compose up -d
+    FAKESTORE_BASE_URL: "${FAKESTORE_BASE_URL:-https://fakestoreapi.com}"
+    RETRY_DELAY_SECONDS: "${RETRY_DELAY_SECONDS:-60}"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./plugins:/opt/airflow/plugins   # contém o ValidarProdutosOperator
+    - ./logs:/opt/airflow/logs
+  networks:
+    - shopbrasil-net
+
+services:
+  postgres-meta:
+    image: postgres:16
+    container_name: shopbrasil-meta-db
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-meta-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    networks:
+      - shopbrasil-net
+
+  postgres-dw:
+    image: postgres:16
+    container_name: shopbrasil-dw
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: shop123
+      POSTGRES_DB: shopbrasil_dw
+    volumes:
+      - postgres-dw-data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "shop", "-d", "shopbrasil_dw"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    networks:
+      - shopbrasil-net
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: shopbrasil-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username admin --password admin \
+          --firstname Admin --lastname ShopBrasil --role Admin --email admin@shopbrasil.local || true
+        # Connection usada pelo PostgresHook (recria para ser idempotente)
+        airflow connections delete postgres_shopbrasil || true
+        airflow connections add postgres_shopbrasil \
+          --conn-type postgres --conn-host postgres-dw --conn-port 5432 \
+          --conn-login shop --conn-password shop123 --conn-schema shopbrasil_dw
+        # Pool que limita a concorrência das tasks mapeadas (2 slots)
+        airflow pools set ecommerce_pool 2 "Concorrência das métricas por categoria"
+        echo "=== Airflow pronto: http://localhost:8080 (admin/admin) ==="
+    depends_on:
+      postgres-meta:
+        condition: service_healthy
+      postgres-dw:
+        condition: service_healthy
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: shopbrasil-scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--allow-multiple", "--limit", "100"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: shopbrasil-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres-meta-data:
+  postgres-dw-data:
+
+networks:
+  shopbrasil-net:
+    driver: bridge
