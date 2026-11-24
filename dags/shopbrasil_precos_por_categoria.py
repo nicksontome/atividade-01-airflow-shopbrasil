@@ -53,12 +53,12 @@ def _identificar(context) -> str:
 
 
 def on_success_callback(context):
-    log.info("✅ SUCESSO | %s | tentativa nº %s", _identificar(context), context["task_instance"].try_number)
+    log.info("SUCESSO | %s | tentativa nº %s", _identificar(context), context["task_instance"].try_number)
 
 
 def on_retry_callback(context):
     log.warning(
-        "🔁 RETRY | %s | erro: %s | nova tentativa será agendada com backoff",
+        "RETRY | %s | erro: %s | nova tentativa será agendada com backoff",
         _identificar(context),
         context.get("exception"),
     )
@@ -67,7 +67,7 @@ def on_retry_callback(context):
 def on_failure_callback(context):
     """Simula o envio de um alerta (Slack/e-mail/PagerDuty em produção)."""
     log.error(
-        "🚨 ALERTA (simulado) | %s | erro: %s | Notificando #time-de-dados...",
+        "ALERTA (simulado) | %s | erro: %s | Notificando #time-de-dados...",
         _identificar(context),
         context.get("exception"),
     )
@@ -126,7 +126,7 @@ def shopbrasil_precos_por_categoria():
             log.error("Falha ao buscar produtos em %s: %s", url, exc)
             raise  # re-lança para o Airflow acionar o retry/backoff
 
-        log.info("✓ %d produtos coletados", len(enxutos))
+        log.info("%d produtos coletados", len(enxutos))
         return enxutos
 
     # =========================================================================
@@ -215,7 +215,7 @@ def shopbrasil_precos_por_categoria():
         finally:
             conn.close()
 
-        log.info("✓ Snapshot de %s: %d removidas, %d inseridas | run=%s", data_ref, apagadas, len(metricas), run_id)
+        log.info("Snapshot de %s: %d removidas, %d inseridas | run=%s", data_ref, apagadas, len(metricas), run_id)
         return {"data_referencia": str(data_ref), "categorias": len(metricas)}
 
     # =========================================================================

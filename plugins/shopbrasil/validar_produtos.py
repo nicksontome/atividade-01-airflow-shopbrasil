@@ -68,5 +68,5 @@ class ValidarProdutosOperator(BaseOperator):
                 f"{len(problemas)} produto(s) com schema inválido. Primeiro: {problemas[0]}"
             )
 
-        log.info("✓ %d produtos com schema válido", len(self.produtos))
+        log.info("%d produtos com schema válido", len(self.produtos))
         return self.produtos

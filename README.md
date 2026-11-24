@@ -63,7 +63,7 @@ Aponte a API para uma rota inválida e reduza a espera do retry para ver tudo em
 ```bash
 FAKESTORE_BASE_URL=https://fakestoreapi.com/rota-invalida RETRY_DELAY_SECONDS=5 docker compose up -d
 docker compose exec airflow-scheduler airflow dags trigger shopbrasil_precos_por_categoria
-# na UI: buscar_produtos fica laranja (retry), depois vermelha; o log mostra 🔁 RETRY e 🚨 ALERTA
+# na UI: buscar_produtos fica laranja (retry), depois vermelha; o log mostra RETRY e ALERTA
 docker compose up -d      # volta à configuração normal (API real, espera de 60 s)
 ```
 
