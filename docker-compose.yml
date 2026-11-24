@@ -1,23 +1,6 @@
-# =============================================================================
-# Atividade 01 – Airflow | ShopBrasil: preços por categoria
-# Apache Airflow 2.9 (LocalExecutor) + PostgreSQL (metadata) + PostgreSQL (DW)
-#
-# Subir tudo:   docker compose up -d
-# UI:           http://localhost:8080   (admin / admin)
-# Banco do DW:  localhost:5434          (shop / shop123, db shopbrasil_dw)
-# Derrubar:     docker compose down      (mantém dados)
-#               docker compose down -v   (apaga bancos e recomeça do zero)
-#
-# Linux: antes da 1ª vez ->  mkdir -p logs && chmod -R 777 logs
-#
-# Serviços:
-#   postgres-meta      banco interno do Airflow (estado das execuções)
-#   postgres-dw        banco analítico onde o pipeline grava as métricas
-#   airflow-init       roda UMA vez: migra o banco, cria usuário admin,
-#                      a Connection "postgres_shopbrasil" e o pool "ecommerce_pool"
-#   airflow-scheduler  agenda e executa as tasks (LocalExecutor)
-#   airflow-webserver  interface web
-# =============================================================================
+# Atividade 01 - Airflow (LocalExecutor) com dois PostgreSQL: metadados e DW
+# Subir: docker compose up -d | UI: http://localhost:8080 (admin/admin)
+# No Linux, antes da primeira vez: mkdir -p logs && chmod -R 777 logs
 
 x-airflow-common: &airflow-common
   image: apache/airflow:2.9.3-python3.11
@@ -25,18 +8,16 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-meta/airflow
     AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLt0nfd7cA="
-    # Pipeline já nasce ligado (agenda sozinho às 06:00 de Brasília)
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__WEBSERVER__SECRET_KEY: "shopbrasil-dev-secret"
     AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: "America/Sao_Paulo"
-    # Parâmetros do pipeline (úteis para demonstrar falhas sem esperar minutos):
-    #   RETRY_DELAY_SECONDS=5 FAKESTORE_BASE_URL=https://fakestoreapi.com/invalido docker compose up -d
+    # parâmetros do pipeline
     FAKESTORE_BASE_URL: "${FAKESTORE_BASE_URL:-https://fakestoreapi.com}"
     RETRY_DELAY_SECONDS: "${RETRY_DELAY_SECONDS:-60}"
   volumes:
     - ./dags:/opt/airflow/dags
-    - ./plugins:/opt/airflow/plugins   # contém o ValidarProdutosOperator
+    - ./plugins:/opt/airflow/plugins
     - ./logs:/opt/airflow/logs
   networks:
     - shopbrasil-net
@@ -89,12 +70,12 @@ services:
         airflow db migrate
         airflow users create --username admin --password admin \
           --firstname Admin --lastname ShopBrasil --role Admin --email admin@shopbrasil.local || true
-        # Connection usada pelo PostgresHook (recria para ser idempotente)
+        # connection usada pelo PostgresHook
         airflow connections delete postgres_shopbrasil || true
         airflow connections add postgres_shopbrasil \
           --conn-type postgres --conn-host postgres-dw --conn-port 5432 \
           --conn-login shop --conn-password shop123 --conn-schema shopbrasil_dw
-        # Pool que limita a concorrência das tasks mapeadas (2 slots)
+        # pool das tasks mapeadas
         airflow pools set ecommerce_pool 2 "Concorrência das métricas por categoria"
         echo "=== Airflow pronto: http://localhost:8080 (admin/admin) ==="
     depends_on:

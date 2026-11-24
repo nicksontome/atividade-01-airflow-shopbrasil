@@ -1,4 +1,4 @@
-"""Operador customizado: valida o schema dos produtos antes do processamento."""
+"""Operador que valida o schema dos produtos antes do processamento."""
 
 from __future__ import annotations
 
@@ -12,19 +12,11 @@ log = logging.getLogger(__name__)
 
 
 class ValidarProdutosOperator(BaseOperator):
-    """Valida a lista de produtos da API de catálogo.
+    """Valida a lista de produtos.
 
-    Regras (por produto):
-      - ``id``: inteiro
-      - ``title``: texto não vazio
-      - ``category``: texto não vazio
-      - ``price``: número >= 0 (bool não vale)
-
-    Se algum produto violar o schema, a task falha com ``AirflowFailException``
-    (falha DEFINITIVA, sem retry: reenviar a mesma resposta inválida não adianta).
-    Se tudo estiver certo, devolve a própria lista (vira XCom e segue o pipeline).
-
-    ``produtos`` é um template_field: aceita a saída (XComArg) de outra task.
+    Cada produto precisa ter id inteiro, title e category com texto e price >= 0.
+    Se algum estiver errado, falha com AirflowFailException (sem retry).
+    Se estiver tudo certo, devolve a própria lista.
     """
 
     template_fields: Sequence[str] = ("produtos",)

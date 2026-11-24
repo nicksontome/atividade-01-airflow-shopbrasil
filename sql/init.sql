@@ -1,9 +1,6 @@
--- =============================================================================
--- ShopBrasil – base analítica (roda automaticamente na 1ª subida do postgres-dw)
--- =============================================================================
+-- Tabelas do banco analítico (criadas na primeira subida do postgres-dw)
 
--- SNAPSHOT: uma linha por (dia, categoria). A PRIMARY KEY impede duplicidade;
--- o pipeline ainda faz DELETE + INSERT na mesma transação (idempotência).
+-- Snapshot: uma linha por dia e categoria
 CREATE TABLE IF NOT EXISTS metricas_categoria (
     data_referencia DATE          NOT NULL,
     categoria       VARCHAR(100)  NOT NULL,
@@ -16,9 +13,7 @@ CREATE TABLE IF NOT EXISTS metricas_categoria (
     PRIMARY KEY (data_referencia, categoria)
 );
 
--- HISTÓRICO (opcional do enunciado): modo APPEND, uma linha por execução e
--- categoria, para acompanhar a evolução dos preços. UNIQUE(run_id, categoria)
--- evita duplicar quando a MESMA run é reprocessada (clear/retry).
+-- Histórico: só insere, para acompanhar a evolução dos preços
 CREATE TABLE IF NOT EXISTS historico_metricas_categoria (
     id            BIGSERIAL     PRIMARY KEY,
     run_id        VARCHAR(250)  NOT NULL,
@@ -35,7 +30,7 @@ CREATE TABLE IF NOT EXISTS historico_metricas_categoria (
 CREATE INDEX IF NOT EXISTS idx_hist_categoria_data
     ON historico_metricas_categoria (categoria, data_execucao);
 
--- View "painel": o que a equipe de pricing abre de manhã (snapshot mais recente)
+-- Painel: snapshot mais recente
 CREATE OR REPLACE VIEW v_painel_precos AS
 SELECT categoria, qtd_produtos, preco_medio, preco_min, preco_max, data_referencia
 FROM metricas_categoria
